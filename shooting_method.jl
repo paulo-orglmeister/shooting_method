@@ -1,64 +1,53 @@
-using LinearAlgebra
-using DifferentialEquations
+include("shooting_funcs.jl")
 
-function x(xₚₒ,T,F)
-	#integrates system during T
-	#F is a vector field for an arbitrary systems of ODEs : ẋ = F(x,t,M)
-	time_span = (0.0,T)
-	M = []
-	problem = ODEProblem(F,xₚₒ,time_span,M)
-	solution = solve(problem)
-	
-	return last(solution)
-end 
-
-function H(xₚₒ,T,F)
-	#Shooting function
-	return x(xₚₒ,T,F) - xₚₒ
-end	
-
-function reduce_period(F,xₚₒ,T,tolerance)
-	#minds minimum period of a periodic solution
-	if T < tolerance #xₚₒ is a fixed point
-		return T
-	else
-		primes = [2,3,5,7,11,13]
-		for p = primes
-			while norm(H(xₚₒ,T/p,F)) < tolerance
-				T /= p
-			end 
-		end
-		return T
-	end
-end
-
-function shooting_method(x₀,T,F :: Function, tolerance,delta)
+function shooting_method(x₀,T,F :: Function,delta,tolerance;phase_condition=1,t=[],verbose=false)
 	#finds zeros of the shooting function H() of a system F of ODEs using a multidimensional Newton-Raphson scheme
-	#tolerance is the allowed deviation from zero in the shooting residue's norm;
-	#delta is the perturbation to each coordinate used for a finite-difference approximation
+	#tolerance is the allowed deviation from zero in the shooting residue's relative norm
+	#delta is the perturbation to each coordinate used in a finite difference derivative approximation
+	#Newton-Raphson method is supplemented with phase condition (orthogonality or Poincaré) 
+	max_steps = 1000 #arbitrary
 	M = []
-	n = size(x₀)[1] #num dimensions
-	xₒ = copy(x₀)
-	T = copy(T)
+	n = size(x₀)[1] #num dimensions of ODE system
+	xₒ ,T = copy(x₀), copy(T)
 	H_T = H(xₒ,T,F)
-	i = 0
-	while ((norm(H_T) > tolerance) && (i<1000))
-		xT = x(xₒ,T,F)
-		del_T = F(xT,T,M) #vector field at evolved position
-		del_xₒ = zeros(n,n) #derivative matrix of x with respect to xₚₒ	
-		for i = 1:n
-			delta_vec = vec(zeros(n,1))
-			delta_vec[i] = delta #used to perturb ith coordinate
-			del_xₒ[:,i] = (x(xₒ+delta_vec,T,F) - xT)/delta
+	rel_error = (norm(H_T)/norm(xₒ))
+	i = 0	
+	while ((rel_error > tolerance) && (i < max_steps))
+		jac_H = get_jac_H(xₒ,T,F,delta)	
+		if phase_condition == 1 # nth coordinate of xₒ (assumed to be a velocity) is set to be zero
+			A = [jac_H; [zeros(1,n-1) 1.0  0.0]] #matrix used to solve for corrections Δ. 
+			Δ = -inv(A)*[H_T ; xₒ[n]] #Δ contains corrections to T and xₒ. xₒ[n] is the phase condition, which should be zero 
+		elseif phase_condition == 2
+			xT = x(xₒ,T,F)
+			del_T = F(xT,T,M)
+			A = [jac_H; [transpose(del_T) 0.0]] #Poincaré orthogonality condition
+			Δ = -inv(A)*[H_T ; del_T]	
+		elseif phase_condition == 3 #every step in newton's method the correction is also required to be orthogonal to a tangent vector t 
+			C = [jac_H ; [zeros(1,n-1) 1.0  0]; transpose(t)] #matrix used to solve for Δ, contains orthogolity to both del_T and the predictor step (tangent vector)
+			Δ = -pinv(C)*[H_T ; xₒ[n]; 0] #uses Moore-Penrose pseudo-inverse because resulting system is overdetermined
 		end
-		A = [[del_xₒ-I del_T]; [transpose(del_T) 0]] #matrix used to solve for Δ
-		Δ = -inv(A)*[H_T ; 0] #Δ contains corrections to T and zₚₒ
 		xₒ += Δ[1:n]
 		T += Δ[n+1]
 		H_T = H(xₒ,T,F)
+		rel_error = (norm(H_T)/norm(xₒ)) 
 		i += 1
+		verbose && print("xₒ = $(round.(xₒ,sigdigits = 5)), T = $(round(T,sigdigits=5)) \n")
 	end
-	xₚₒ = xₒ
-	Tₚ = reduce_period(F,xₚₒ,T,tolerance)
-	return (xₚₒ,Tₚ)
+	if (rel_error < tolerance)
+		verbose && print("Newton-Raphson method converged after i = $i steps within tolerance = $tolerance \n")
+		if phase_condition == 3
+			xₚ, Tₚ = xₒ, T #bad idea to reduce period during numerical continuation
+			return (xₚ,Tₚ,true) #numerical continuation must know whether convergence was achieved
+		else
+			xₚ, Tₚ = xₒ, reduce_period(F,xₒ,T,tolerance)
+			return (xₚ,Tₚ)
+		end
+	else		
+		print("Error: Newton-Raphson method convergence failed for $max_steps steps. \n Last iterate xₒ, T = $(round.(xₒ,sigdigits=5)), $(round(T,sigdigits=5)) \n")
+		if phase_condition == 3
+			return (xₒ,T,false)
+		else
+			return xₒ,T
+		end
+	end
 end
