@@ -10,7 +10,7 @@ function get_tangent(xₒ,T,F,delta)
 	return t
 end
 
-function parclength_continuation(xₒ,T,F :: Function,delta,tolerance;s=0.01,steps::Int64=100,force_period_increase=false,verbose=false)
+function 	
 	#Continues a family of zeros to the shooting function (periodic solutions), taking predictor steps proportional to pseudo-arclength 
 	#nth coordinate of xₒ (assumed to be a velocity) must be 0 as a phase condition
 	success = true #true if Newton method converged for corrector step converged 
@@ -30,9 +30,11 @@ function parclength_continuation(xₒ,T,F :: Function,delta,tolerance;s=0.01,ste
 		xₒ += s*t[1:n]
 		T  += s*t[n+1]	
 		xₚ,Tₚ,success = shooting_method(xₒ,T,F,delta,tolerance,phase_condition=3,t=t,verbose=verbose)
-		success && push!(sols,[copy(xₚ),copy(Tₚ)])
-		last_t = copy(t)
-		j += 1
+		if success 
+			push!(sols,[copy(xₚ),copy(Tₚ)])
+			last_t = copy(t)
+			j += 1
+		end
 	end
 	(~success) && print("Error: Modified Newton-Raphson method failed to converge at step j = $j. \n")	
 	return sols

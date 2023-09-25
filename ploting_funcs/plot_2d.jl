@@ -2,15 +2,17 @@ using Plots
 using LinearAlgebra
 using DifferentialEquations
 
-function plot_2d(xₚ::Vector{Float64},T::Float64, F ; dim1::Int64=1,dim2::Int64=2,color="blue",x_lim::Float64=5.0,y_lim::Float64=5.0)
+function plot_2d(xₚ::Vector{Float64},T::Float64, F ; dim1::Int64=1,dim2::Int64=2,color="blue",use_plotlyjs=false)
+	use_plotlyjs && plotlyjs()
 	#integrates system during T and plots result in phase space
 	time_span = (0.0,T)
-	M = []
-	x0, y0 = xₚ[dim1], xₚ[dim2]
+	M = ()
+	x1_0, x2_0 = xₚ[dim1], xₚ[dim2]
 	problem = ODEProblem(F,xₚ,time_span,M)
 	solution = solve(problem)
-	plt = plot(solution,idxs=(dim1,dim2),plotdensity=10000,label="solution",xaxis = "x",yaxis="ẋ",xlim=(-x_lim,x_lim),ylim=(-y_lim,y_lim))
-	scatter!([x0],[y0],color=color,label="xₚ") #plots initial condition
+	x1_lim, x2_lim = 1.2*maximum([abs(x1) for (x1,x2) in [x for (x,t) in tuples(solution)]]), 1.2*maximum([abs(x2) for (x1,x2) in [x for (x,t) in tuples(solution)]])	
+	plt = plot(solution,idxs=(dim1,dim2),plotdensity=10000,label="solution",xaxis = "x",yaxis="ẋ",xlim=(-x1_lim,x1_lim),ylim=(-x2_lim,x2_lim))
+	scatter!([x1_0],[x2_0],color=color,label="xₚ") #plots initial condition
 	display(plt)
 end  
 
